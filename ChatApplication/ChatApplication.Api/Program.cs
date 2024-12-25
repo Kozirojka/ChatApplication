@@ -13,6 +13,9 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 
+//todo: add google authorization via login
+
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
