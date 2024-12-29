@@ -41,7 +41,7 @@ builder.Services.AddAuthentication("cookie")
         o.SignInScheme = "cookie";
 
         o.ClientId = builder.Configuration.GetSection("Youtube:ClientId").Value;
-
+ 
         o.ClientSecret = builder.Configuration.GetSection("Youtube:ClientSecret").Value;
 
         o.SaveTokens = false;
