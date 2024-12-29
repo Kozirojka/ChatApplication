@@ -19,72 +19,74 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>()
 
 builder.Services.AddAuthentication("cookie")
     .AddCookie("cookie", o =>
-{
-    o.LoginPath = "/login";
-    
-    
-    var del = o.Events.OnRedirectToAccessDenied;
-
-
-
-    o.Events.OnRedirectToAccessDenied = context =>
     {
-        if (context.Request.Path.StartsWithSegments("/yt"))
+        o.LoginPath = "/login";
+
+
+        var del = o.Events.OnRedirectToAccessDenied;
+
+
+
+        o.Events.OnRedirectToAccessDenied = context =>
         {
-           return  context.HttpContext.ChallengeAsync("youtube");
-        }
+            if (context.Request.Path.StartsWithSegments("/yt"))
+            {
+                return context.HttpContext.ChallengeAsync("youtube");
+            }
 
-        return del(context);
-    };
-}).AddOAuth("youtube", o =>
-{
-    o.SignInScheme = "cookie";
-    
-    o.ClientId = builder.Configuration.GetSection("Youtube:ClientId").Value;
-    
-    o.ClientSecret = builder.Configuration.GetSection("Youtube:ClientSecret").Value;
-
-    o.SaveTokens = false;
-    
-    o.Scope.Clear();
-
-    o.Scope.Add("https://www.googleapis.com/auth/youtube.readonly");
-    o.AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
-
-
-    o.TokenEndpoint = "https://oauth2.googleapis.com/token";
-
-    o.CallbackPath = "/oauth/yt-cb";
-
-
-    o.Events.OnCreatingTicket = async context =>
+            return del(context);
+        };
+    }).AddOAuth("youtube", o =>
     {
-        var db = context.HttpContext.RequestServices.GetRequiredService<Database>();
+        o.SignInScheme = "cookie";
 
-        var authenticationHandlerProvider = context.HttpContext.RequestServices.GetService<IAuthenticationHandlerProvider>();
-        var handler = await authenticationHandlerProvider
-            .GetHandlerAsync(context.HttpContext, "cookie");
+        o.ClientId = builder.Configuration.GetSection("Youtube:ClientId").Value;
 
-        var authResult = await handler.AuthenticateAsync();
-        if (!authResult.Succeeded)
+        o.ClientSecret = builder.Configuration.GetSection("Youtube:ClientSecret").Value;
+
+        o.SaveTokens = false;
+
+        o.Scope.Clear();
+
+        o.Scope.Add("https://www.googleapis.com/auth/youtube.readonly");
+        o.AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
+
+
+        o.TokenEndpoint = "https://oauth2.googleapis.com/token";
+
+        o.CallbackPath = "/oauth/yt-cb";
+
+
+        o.Events.OnCreatingTicket = async context =>
         {
-            context.Fail("failed authentication");
-            return;
-        }
-        
-        var cp = authResult.Principal;
-        
-            
+            var db = context.HttpContext.RequestServices.GetRequiredService<Database>();
 
-        var userId = cp.FindFirstValue("user_id");
-        db[userId] = context.AccessToken;
+            var authenticationHandlerProvider =
+                context.HttpContext.RequestServices.GetService<IAuthenticationHandlerProvider>();
+            var handler = await authenticationHandlerProvider
+                .GetHandlerAsync(context.HttpContext, "cookie");
 
-        context.Principal = cp.Clone();
-        var identity = context.Principal.Identities.First(x => x.AuthenticationType == "cookie");
-        
-        identity.AddClaim(new Claim("yt-token", "y"));
-    };
-});
+            var authResult = await handler.AuthenticateAsync();
+            if (!authResult.Succeeded)
+            {
+                context.Fail("failed authentication");
+                return;
+            }
+
+            var cp = authResult.Principal;
+
+
+
+            var userId = cp.FindFirstValue("user_id");
+            db[userId] = context.AccessToken;
+
+            context.Principal = cp.Clone();
+            var identity = context.Principal.Identities.First(x => x.AuthenticationType == "cookie");
+
+            identity.AddClaim(new Claim("yt-token", "y"));
+        };
+    });
+    
 
 builder.Services.AddAuthorization(b =>
 {
