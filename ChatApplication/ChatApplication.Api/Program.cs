@@ -12,7 +12,6 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<ApplicationDbContext>(options => 
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddSingleton<Database>().AddTransient<IClaimsTransformation, TokenTransormation>();
 
 builder.Services.AddIdentity<IdentityUser, IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
@@ -95,6 +94,8 @@ builder.Services.AddAuthorization(b =>
             .RequireAuthenticatedUser());
 });
 
+builder.Services.AddSingleton<Database>().AddTransient<IClaimsTransformation, TokenTransormation>();
+
 builder.Services.AddHttpClient();
 
 builder.Services.AddCors(options =>
@@ -146,7 +147,7 @@ app.MapGet("/login", () => Results.SignIn(
 app.MapGet("/yt/info", async (IHttpClientFactory clientFactory, HttpContext ctx) =>
 {
     
-    var accessToken = ctx.User.FindFirstValue("yt-access-token");
+    var accessToken = ctx.User.FindFirstValue("yt-access_token");
     var client = clientFactory.CreateClient();
      
     using var req = new HttpRequestMessage(HttpMethod.Get,
@@ -190,7 +191,7 @@ public class TokenTransormation : IClaimsTransformation
         
         var identity = cp.Identities.First(x => x.AuthenticationType == "cookie");
         
-        identity.AddClaim(new Claim("yt-access-token", accessToken));
+        identity.AddClaim(new Claim("yt-access_token", accessToken));
         
         return Task.FromResult(cp);
     }
