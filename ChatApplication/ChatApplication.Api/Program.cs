@@ -17,23 +17,26 @@ builder.Services.AddIdentity<IdentityUser, IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
 
+
+builder.Services.AddDistributedMemoryCache(); 
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+});
+
 builder.Services.AddAuthentication("cookie")
     .AddCookie("cookie", o =>
     {
         o.LoginPath = "/login";
-
-
         var del = o.Events.OnRedirectToAccessDenied;
-
-
-
         o.Events.OnRedirectToAccessDenied = context =>
         {
             if (context.Request.Path.StartsWithSegments("/yt"))
             {
                 return context.HttpContext.ChallengeAsync("youtube");
             }
-
             return del(context);
         };
     }).AddOAuth("youtube", o =>
@@ -85,6 +88,51 @@ builder.Services.AddAuthentication("cookie")
 
             identity.AddClaim(new Claim("yt-token", "y"));
         };
+    }).AddOAuth("google", o =>
+    {
+        o.SignInScheme = "cookie";
+        o.ClientId = builder.Configuration.GetSection("Google:ClientId").Value;
+        o.ClientSecret = builder.Configuration.GetSection("Google:ClientSecret").Value;
+        
+        o.AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
+        
+        o.TokenEndpoint = "https://oauth2.googleapis.com/token";
+
+        o.Scope.Add("openid");
+        o.Scope.Add("profile");
+        o.Scope.Add("email");
+
+        o.CallbackPath = "/oauth/google-cb";
+
+        o.Events.OnCreatingTicket = async context =>
+        {
+            var returnedState = context.Request.Query["state"].ToString();
+            var expectedState = context.HttpContext.Session.GetString("OAuthState");
+
+            if (returnedState != expectedState)
+            {
+                throw new InvalidOperationException("Invalid OAuth state. Possible CSRF attack.");
+            }
+
+            var userInfoEndpoint = "https://www.googleapis.com/oauth2/v3/userinfo";
+            var request = new HttpRequestMessage(HttpMethod.Get, userInfoEndpoint);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
+            var response = await context.Backchannel.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException("Problem with backchannel response");
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            var user = System.Text.Json.JsonDocument.Parse(json).RootElement;
+    
+            var identity = (ClaimsIdentity)context.Principal.Identity;
+            identity.AddClaim(new Claim(ClaimTypes.Name, user.GetProperty("name").GetString()));
+            identity.AddClaim(new Claim(ClaimTypes.Email, user.GetProperty("email").GetString()));
+            identity.AddClaim(new Claim("picture", user.GetProperty("picture").GetString()));
+        };
+
     });
     
 
@@ -103,7 +151,7 @@ builder.Services.AddHttpClient();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
-    {
+    {                           
         policy.AllowAnyOrigin()
             .AllowAnyMethod()
             .AllowAnyHeader();
@@ -127,6 +175,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseCors("AllowAll");
+app.UseSession();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -146,6 +195,15 @@ app.MapGet("/login", () => Results.SignIn(
     authenticationScheme: "cookie"
 ));
 
+app.MapGet("/login/google", () =>
+{
+    var props = new AuthenticationProperties
+    {
+        RedirectUri = "/profile"
+    };
+    return Results.Challenge(props, new[] { "google" });
+});
+
 app.MapGet("/yt/info", async (IHttpClientFactory clientFactory, HttpContext ctx) =>
 {
     
@@ -160,6 +218,24 @@ app.MapGet("/yt/info", async (IHttpClientFactory clientFactory, HttpContext ctx)
     
 }).RequireAuthorization("youtube-enabled");
 
+app.MapGet("/profile", (HttpContext context) =>
+{
+    if (!context.User.Identity.IsAuthenticated)
+    {
+        return Results.Unauthorized();
+    }
+
+    var name = context.User.FindFirst(ClaimTypes.Name)?.Value;
+    var email = context.User.FindFirst(ClaimTypes.Email)?.Value;
+    var picture = context.User.FindFirst("picture")?.Value;
+
+    return Results.Json(new
+    {
+        Name = name,
+        Email = email,
+        Picture = picture
+    });
+});
 
 app.Run();
 
